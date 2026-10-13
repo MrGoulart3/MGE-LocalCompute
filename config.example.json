@@ -19,5 +19,9 @@
   "project_root": "~/projects",
   "notify_command": [],
   "language": "en",
-  "allow_no_sensor": false
+  "allow_no_sensor": false,
+  "capacity_ram_ok_gb": 4,
+  "capacity_ram_tight_gb": 2.5,
+  "capacity_load_ok": 5,
+  "capacity_load_tight": 6.5
 }

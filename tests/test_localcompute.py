@@ -128,6 +128,7 @@ class LocalComputeTest(unittest.TestCase):
     def test_clamp_blocks_admission_and_language(self):
         result = self.call('capacidade_pc', TERMICO_CLAMP='1')
         self.assertIn('TIGHT', result.stdout)
+        self.assertIn('FULL', self.call('capacidade_pc', MGE_RAM_GB='1').stdout)
         cfg = json.loads(self.config.read_text()) | {'language': 'pt-BR'}
         self.config.write_text(json.dumps(cfg))
         self.assertIn('Capacidade: OK', self.call('capacidade_pc').stdout)

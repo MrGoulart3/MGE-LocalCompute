@@ -34,7 +34,9 @@ fila_noturna --add '1|proj-a|2|/caminho/projects/proj-a|python3 calculation.py'
 fila_noturna --status
 ```
 
-Formato: `prioridade|projeto|threads|diretório|comando shell`. Números menores vêm primeiro; empates preservam a ordem de inclusão. O diretório deve existir sob `project_root`. Comandos da fila são programas locais confiáveis, nunca entrada remota. Duplicatas têm IDs separados. Jobs destacados gravam `<id>.log` e `<id>.status.json` em `state_dir`. Se um worker cair, pode faltar o status: confira o log antes de repetir. Rode o despachante novamente para limpar registros concluídos. Execuções diretas aguardam recursos e preservam o código de saída. Encerrar o executor repassa TERM e CONT ao grupo, escalando se necessário. O orçamento depende das threads declaradas; não impõe limites reais de memória ou CPU ao programa. Comandos devem permanecer na sessão, sem virar daemons.
+Formato: `prioridade|projeto|threads|diretório|comando shell`. Números menores vêm primeiro; empates preservam a ordem de inclusão. O diretório deve existir sob `project_root`. Comandos da fila são programas locais confiáveis, nunca entrada remota. Duplicatas têm IDs separados. Jobs destacados gravam `<id>.log` e `<id>.status.json` em `state_dir`. Se um worker cair, pode faltar o status: confira o log antes de repetir. Rode o despachante novamente para limpar registros concluídos. Execuções diretas aguardam recursos e preservam o código de saída. Encerrar o executor repassa TERM e CONT ao grupo, escalando se necessário. O orçamento depende das threads declaradas; não impõe limites reais de memória ou CPU ao programa. Comandos devem permanecer na sessão, sem virar daemons. Avisos opcionais informam a conclusão da fila sem alterar o código de saída registrado. O estado inclui cwd para o portal irmão e a proteção de sessões com jobs.
+
+`capacidade_pc` informa OK / APERTADA / LOTADA usando `capacity_ram_ok_gb`, `capacity_ram_tight_gb`, `capacity_load_ok` e `capacity_load_tight`; calor e power-clamp impedem o veredito OK.
 
 ## Guarda térmica
 

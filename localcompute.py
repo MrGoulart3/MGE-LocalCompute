@@ -20,6 +20,8 @@ DEFAULTS = {
     'min_ram_gb': 3, 'start_temp': 75, 'block_temp': 85, 'stop_temp': 90,
     'resume_temp': 75, 'warn_temp': 92, 'hot_samples': 2, 'cool_samples': 3,
     'night_start': 21, 'night_end': 8, 'queue_end': 6, 'poll_seconds': 60,
+    'capacity_ram_ok_gb': 4, 'capacity_ram_tight_gb': 2.5,
+    'capacity_load_ok': 5, 'capacity_load_tight': 6.5,
     'state_dir': '~/.local/state/mge-localcompute', 'project_root': '~/projects',
     'notify_command': [], 'language': 'en', 'allow_no_sensor': False,
 }
@@ -38,6 +40,10 @@ def config() -> dict:
     for key in ('day_load', 'night_load', 'min_ram_gb', 'poll_seconds'):
         if not isinstance(cfg[key], (int, float)) or cfg[key] <= 0:
             raise ValueError(f'Invalid limit / Limite inválido: {key}')
+    if not all(isinstance(cfg[key], (int, float)) for key in ('resume_temp', 'start_temp', 'block_temp', 'stop_temp', 'warn_temp')):
+        raise ValueError('Invalid temperatures / Temperaturas inválidas')
+    if not cfg['capacity_ram_tight_gb'] <= cfg['capacity_ram_ok_gb'] or not cfg['capacity_load_ok'] <= cfg['capacity_load_tight']:
+        raise ValueError('Invalid capacity thresholds / Limites de capacidade inválidos')
     if not cfg['resume_temp'] <= cfg['start_temp'] < cfg['block_temp'] < cfg['stop_temp'] <= cfg['warn_temp']:
         raise ValueError('Invalid temperature thresholds / Limites térmicos inválidos')
     if not isinstance(cfg['notify_command'], list) or not all(isinstance(x, str) for x in cfg['notify_command']):
@@ -156,7 +162,8 @@ def spawn(cfg: dict, state: dict, threads: int, command: list[str], cwd: str | N
     process = subprocess.Popen(['nice', '-n', '19', 'ionice', '-c', '3', *command],
                                cwd=cwd, env=env, start_new_session=True, stdout=output,
                                stderr=subprocess.STDOUT if output else None)
-    job = {'pid': process.pid, 'start': identity(process.pid)[1], 'threads': threads, 'paused': False}
+    job = {'pid': process.pid, 'start': identity(process.pid)[1], 'threads': threads,
+           'paused': False, 'cwd': str(Path(cwd or Path.cwd()).resolve())}
     state['jobs'].append(job)
     return process, job
 
@@ -233,11 +240,8 @@ def thermal(cfg: dict) -> None:
             pause.rename(archive / f'{time.time_ns()}.txt')
         today = datetime.date.today().isoformat()
         if temp >= cfg['warn_temp'] and state.get('warn_day') != today and cfg['notify_command']:
-            try:
-                subprocess.run([*cfg['notify_command'], 'CPU hot / CPU quente', f'{temp} C'], timeout=10, check=True)
+            if notify(cfg, 'CPU hot', 'CPU quente', f'{temp} C'):
                 state['warn_day'] = today
-            except (OSError, subprocess.SubprocessError):
-                say(cfg, 'Notification failed.', 'Falha no aviso.')
     say(cfg, f'Temperature: {temp} C', f'Temperatura: {temp} C')
 
 
@@ -280,8 +284,22 @@ def queue(cfg: dict, line: str | None, status: bool) -> None:
                 break
             write_json(directory / f'{entry["id"]}.request.json', entry)
             with (directory / f'{entry["id"]}.log').open('w') as output:
-                spawn(cfg, state, entry['threads'], [sys.executable, str(Path(__file__).resolve()), '_worker', str(directory / f'{entry["id"]}.request.json')], output=output)
+                spawn(cfg, state, entry['threads'], [sys.executable, str(Path(__file__).resolve()), '_worker', str(directory / f'{entry["id"]}.request.json')], cwd=entry['cwd'], output=output)
             state['queue'].pop(0)
+
+
+def notify(cfg: dict, en: str, pt: str, message: str) -> bool:
+    """Sends bounded optional notifications without changing a computation status."""
+    if not cfg['notify_command']:
+        return False
+    title = pt if cfg['language'] == 'pt-BR' else en
+    try:
+        subprocess.run([*cfg['notify_command'], title, message], timeout=10,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        say(cfg, 'Notification failed.', 'Falha no aviso.')
+        return False
 
 
 def worker(path: str) -> int:
@@ -294,6 +312,7 @@ def worker(path: str) -> int:
         result = 127
     write_json(request.with_name(f'{entry["id"]}.status.json'), {'exit_code': result})
     request.unlink()
+    notify(config(), 'Queue job finished', 'Job da fila concluído', f'{entry["id"]}: exit_code={result}')
     return result
 
 
@@ -315,8 +334,11 @@ def main() -> int:
             with locked(cfg) as (_, state):
                 data = metrics() | {'threads': sum(job['threads'] for job in state['jobs'])}
             print(json.dumps(data))
-            healthy = data['ram_gb'] >= cfg['min_ram_gb'] and data['load'] <= cfg['day_load'] and data['temp'] is not None and data['temp'] < cfg['block_temp'] and not data['clamp']
-            say(cfg, 'Capacity: OK' if healthy else 'Capacity: TIGHT', 'Capacidade: OK' if healthy else 'Capacidade: APERTADA')
+            healthy = data['ram_gb'] >= cfg['capacity_ram_ok_gb'] and data['load'] <= cfg['capacity_load_ok'] and data['temp'] is not None and data['temp'] < cfg['block_temp'] and not data['clamp']
+            tight = data['ram_gb'] >= cfg['capacity_ram_tight_gb'] and data['load'] <= cfg['capacity_load_tight']
+            verdict = 'OK' if healthy else 'TIGHT' if tight else 'FULL'
+            localized = {'OK': 'OK', 'TIGHT': 'APERTADA', 'FULL': 'LOTADA'}[verdict]
+            say(cfg, f'Capacity: {verdict}', f'Capacidade: {localized}')
         else:
             return run(cfg, int(args.args[0]), args.args[1:])
     except (ValueError, IndexError, OSError) as error:

@@ -34,7 +34,9 @@ fila_noturna --add '1|proj-a|2|/path/to/projects/proj-a|python3 calculation.py'
 fila_noturna --status
 ```
 
-A queue record is `priority|project|threads|directory|shell command`; lower priority numbers go first, equal priorities preserve insertion order. The directory must exist under `project_root`. Queue commands are trusted local shell programs, never remote input. Duplicate entries retain separate IDs. Detached jobs write `<id>.log` and `<id>.status.json` in `state_dir`. A crashed queue worker may lack a status file: inspect its log before retrying. Run the dispatcher again to prune completed jobs. Manual foreground runs wait for resources and propagate the command's exit status. Termination forwards TERM and CONT to the managed group, then escalates if needed. The budget depends on declared threads; tools cannot enforce a program's actual memory or CPU consumption. Commands must remain within their session and not daemonize.
+A queue record is `priority|project|threads|directory|shell command`; lower priority numbers go first, equal priorities preserve insertion order. The directory must exist under `project_root`. Queue commands are trusted local shell programs, never remote input. Duplicate entries retain separate IDs. Detached jobs write `<id>.log` and `<id>.status.json` in `state_dir`. A crashed queue worker may lack a status file: inspect its log before retrying. Run the dispatcher again to prune completed jobs. Manual foreground runs wait for resources and propagate the command's exit status. Termination forwards TERM and CONT to the managed group, then escalates if needed. The budget depends on declared threads; tools cannot enforce a program's actual memory or CPU consumption. Commands must remain within their session and not daemonize. Optional notifications report queue completion without changing its recorded exit code. Managed state includes project cwd for the sibling portal and idle-session checks.
+
+`capacidade_pc` reports OK / TIGHT / FULL using `capacity_ram_ok_gb`, `capacity_ram_tight_gb`, `capacity_load_ok` and `capacity_load_tight`; heat and power-clamp prevent an OK verdict.
 
 ## Thermal guard
 
