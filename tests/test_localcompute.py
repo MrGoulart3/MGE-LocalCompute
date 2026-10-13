@@ -119,6 +119,17 @@ class LocalComputeTest(unittest.TestCase):
         for path in (self.path / 'state').glob('*.status.json'):
             self.assertEqual(7, json.loads(path.read_text())['exit_code'])
 
+    def test_thermal_notifications_are_rate_limited(self):
+        notifier = self.path / 'notify'
+        recorded = self.path / 'notifications.txt'
+        notifier.write_text('#!/bin/sh\nprintf "%s\\n" "$1" >> "' + str(recorded) + '"\n')
+        notifier.chmod(0o755)
+        cfg = json.loads(self.config.read_text()) | {'notify_command': [str(notifier)]}
+        self.config.write_text(json.dumps(cfg))
+        self.assertEqual(0, self.call('termico', TERMICO_TEMP='92').returncode)
+        self.assertEqual(0, self.call('termico', TERMICO_TEMP='93').returncode)
+        self.assertEqual(['CPU hot'], recorded.read_text().splitlines())
+
     def test_reject_paths_outside_root_and_invalid_limits(self):
         self.assertEqual(2, self.call('fila_noturna', '--add', '1|proj-a|1|/tmp|true').returncode)
         self.assertEqual(2, self.call('rodar_local', '9', 'true').returncode)
