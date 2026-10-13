@@ -1,0 +1,23 @@
+{
+  "day_threads": 4,
+  "night_threads": 6,
+  "day_load": 5.5,
+  "night_load": 7.5,
+  "min_ram_gb": 3,
+  "start_temp": 75,
+  "block_temp": 85,
+  "stop_temp": 90,
+  "resume_temp": 75,
+  "warn_temp": 92,
+  "hot_samples": 2,
+  "cool_samples": 3,
+  "night_start": 21,
+  "night_end": 8,
+  "queue_end": 6,
+  "poll_seconds": 60,
+  "state_dir": "~/.local/state/mge-localcompute",
+  "project_root": "~/projects",
+  "notify_command": [],
+  "language": "en",
+  "allow_no_sensor": false
+}
