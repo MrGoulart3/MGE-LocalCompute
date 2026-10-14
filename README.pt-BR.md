@@ -1,5 +1,11 @@
 # MGE-LocalCompute
 
+[![CI](https://github.com/MrGoulart3/MGE-LocalCompute/actions/workflows/ci.yml/badge.svg?branch=ci)](https://github.com/MrGoulart3/MGE-LocalCompute/actions/workflows/ci.yml) · [Changelog](CHANGELOG.md)
+
+O badge exibirá status após a publicação da branch `ci`. / The badge shows status after the `ci` branch is published.
+
+[Verificação local / Local checks](.github/CONTRIBUTING.md)
+
 [English](README.md) · **Português brasileiro**
 
 Executa cálculos finitos em um PC Linux compartilhado preservando recursos para outras pessoas e para o desktop. Todos os projetos usam uma trava e um orçamento de recursos comuns. Requer Python 3.10+, Linux `/proc`, `nice` e `ionice`; sem pacotes Python adicionais.

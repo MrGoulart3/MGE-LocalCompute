@@ -1,5 +1,11 @@
 # MGE-LocalCompute
 
+[![CI](https://github.com/MrGoulart3/MGE-LocalCompute/actions/workflows/ci.yml/badge.svg?branch=ci)](https://github.com/MrGoulart3/MGE-LocalCompute/actions/workflows/ci.yml) · [Changelog](CHANGELOG.md)
+
+O badge exibirá status após a publicação da branch `ci`. / The badge shows status after the `ci` branch is published.
+
+[Verificação local / Local checks](.github/CONTRIBUTING.md)
+
 **English** · [Português brasileiro](README.pt-BR.md)
 
 Run finite computations on a shared Linux PC without consuming every thread or making the desktop unresponsive. All projects share one admission lock and one resource budget. Requires Python 3.10+, Linux `/proc`, `nice` and `ionice`; no Python packages.
