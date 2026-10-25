@@ -21,7 +21,7 @@ chmod 600 ~/.config/mge-localcompute/config
 export PATH="$HOME/tools/MGE-LocalCompute/bin:$PATH"
 ```
 
-Edit the JSON configuration: shared `state_dir`, permitted `project_root`, day/night thread and load limits, available RAM, temperatures, sampling counts, local hours, polling interval, language (`en` / `pt-BR`) and `notify_command` (argv array, e.g. `["avisar"]`). `MGE_CONFIG` selects another file. Defaults: four daytime threads, six nighttime threads, 3 GiB available RAM, admission at ≤75 °C; night 21:00–08:00, queue starts before 06:00. All users of the tools must select the same state directory. Missing temperature sensors block admission unless explicitly allowed by `allow_no_sensor`.
+Edit the JSON configuration: shared `state_dir`, permitted `project_root`, day/night thread and load limits, available RAM, temperatures, sampling counts, local hours, polling interval, language (`en` / `pt-BR`) and `notify_command` (argv array, e.g. `["avisar"]`). `MGE_CONFIG` selects another file. Defaults: five daytime threads, six nighttime threads, 3 GiB available RAM, admission at ≤78 °C; night 21:00–08:00, queue starts before 06:00. All users of the tools must select the same state directory. Missing temperature sensors block admission unless explicitly allowed by `allow_no_sensor`.
 
 Example crontab (use absolute checkout paths; cron uses the system timezone):
 
@@ -57,3 +57,12 @@ python3 -m unittest discover -s tests -v
 Tests use isolated runtime state, finite fake jobs and explicit overrides: `TERMICO_TEMP`, `TERMICO_CLAMP`, `RODAR_LOCAL_TEMP`, `RODAR_LOCAL_DIR`, `TERMICO_DIR`, `FILA_FORCAR=1`, `MGE_HOUR`, `MGE_LOAD`, `MGE_RAM_GB`. Overrides are for testing; keep them out of production cron. Optional [system tuning](docs/SYSTEM_TUNING.md) is separate from installation. No chemistry examples are bundled.
 
 Related: [MGE-UAH-Orquestra](https://github.com/MrGoulart3/MGE-UAH-Orquestra), [MGE-AgentPortal](https://github.com/MrGoulart3/MGE-AgentPortal). MIT; see [LICENSE](LICENSE).
+
+
+## RAM protection and dated night capacity (2026-10-24)
+
+Run `guarda_ram` once a minute: below `guard_ram_mb` (default 1,500 MiB), it terminates the registered group with the largest aggregate resident memory, resumes a stopped group to deliver termination, waits up to ten seconds, then revalidates PID start time/group identity before escalation. It never targets an unregistered process. Use `guarda_ram --dry-run` to inspect selection without signals. Events go to `ram.log` and the configured notifier. Thermal behavior remains staged, not destructive.
+
+Admission defaults now match the current profile: day 5 threads/load 6.5; night 6/load 7.5; minimum free RAM 3 GiB; start ≤78 °C. An explicit `NOITE_CHEIA` file in the shared state root, containing that night's ISO date, permits `full_night_threads=7` and `full_night_load=8.5`; stale dates are ignored. The night date is calculated after subtracting the night-end hour. All wrappers share one registry; per-command registry overrides are ignored unless `RODAR_LOCAL_TESTE=1`. A nonwritable registry fails rather than starting untracked work.
+
+`fila_prioridade_noite` schedules agent credit usage separately from `fila_noturna` computation. Set `NIGHT_PRIORITY_CONFIG` to a copy of `night-priority.example.json`, including the safe message sender's argv. See [night queues](docs/NIGHT_QUEUES.md). It does not start an AI process itself; its delivered prompt may consume credits.

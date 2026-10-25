@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-24
+
+- Update calibrated admission limits and date-scoped full-night capacity; add owned-process RAM guard, shared-registry enforcement and serialized agent night priority queue.
+
 ## [Unreleased]
 
 ### Added / Adicionado

@@ -1,0 +1,11 @@
+{
+  "state_dir": "~/.local/state/mge-orchestra",
+  "usage_cache": "~/.claude/plugins/oh-my-claudecode/.usage-cache-anthropic.json",
+  "start_hour": 21,
+  "end_hour": 5,
+  "max_percent": 95,
+  "herdr": "herdr",
+  "send_command": [
+    "/opt/tools/orquestra/bin/enviar_space"
+  ]
+}

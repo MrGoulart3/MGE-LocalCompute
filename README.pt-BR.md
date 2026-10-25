@@ -21,7 +21,7 @@ chmod 600 ~/.config/mge-localcompute/config
 export PATH="$HOME/tools/MGE-LocalCompute/bin:$PATH"
 ```
 
-Edite o JSON: `state_dir` compartilhado, `project_root` permitido, threads e carga de dia/noite, RAM disponível, temperaturas, contagens de amostras, horários locais, intervalo de espera, idioma (`en` / `pt-BR`) e `notify_command` (lista de argumentos, exemplo `["avisar"]`). `MGE_CONFIG` escolhe outro arquivo. Padrão: quatro threads de dia, seis à noite, 3 GiB disponíveis e início até 75 °C; noite das 21h às 8h e último início da fila antes das 6h. Todos devem usar o mesmo diretório de estado. Sem sensor, novos cálculos ficam bloqueados, salvo configuração explícita de `allow_no_sensor`.
+Edite o JSON: `state_dir` compartilhado, `project_root` permitido, threads e carga de dia/noite, RAM disponível, temperaturas, contagens de amostras, horários locais, intervalo de espera, idioma (`en` / `pt-BR`) e `notify_command` (lista de argumentos, exemplo `["avisar"]`). `MGE_CONFIG` escolhe outro arquivo. Padrão: cinco threads de dia, seis à noite, 3 GiB disponíveis e início até 78 °C; noite das 21h às 8h e último início da fila antes das 6h. Todos devem usar o mesmo diretório de estado. Sem sensor, novos cálculos ficam bloqueados, salvo configuração explícita de `allow_no_sensor`.
 
 Crontab de exemplo (caminhos absolutos; fuso do sistema):
 
@@ -57,3 +57,12 @@ python3 -m unittest discover -s tests -v
 Testes usam estado isolado, processos falsos finitos e overrides explícitos: `TERMICO_TEMP`, `TERMICO_CLAMP`, `RODAR_LOCAL_TEMP`, `RODAR_LOCAL_DIR`, `TERMICO_DIR`, `FILA_FORCAR=1`, `MGE_HOUR`, `MGE_LOAD`, `MGE_RAM_GB`. Não use overrides no cron real. [Ajustes opcionais do sistema](docs/SYSTEM_TUNING.pt-BR.md) ficam separados da instalação. Exemplos químicos não foram incluídos.
 
 Relacionados: [MGE-UAH-Orquestra](https://github.com/MrGoulart3/MGE-UAH-Orquestra), [MGE-AgentPortal](https://github.com/MrGoulart3/MGE-AgentPortal). MIT; veja [LICENSE](LICENSE).
+
+
+## Guarda de RAM e capacidade por noite (2026-10-24)
+
+Execute `guarda_ram` a cada minuto: abaixo de `guard_ram_mb` (padrão 1.500 MiB), encerra somente o grupo registrado com maior RAM residente somada. Envia TERM/CONT, espera até dez segundos e revalida identidade do PID/grupo antes de KILL. Processos não registrados ficam fora. `guarda_ram --dry-run` mostra a seleção sem sinais. Registra em `ram.log` e avisa pelo notificador configurado. A proteção térmica continua por pausas graduais.
+
+Perfil atual: dia 5 threads/carga 6,5; noite 6/carga 7,5; RAM livre mínima de 3 GiB; partida até 78 °C. O arquivo explícito `NOITE_CHEIA` no estado compartilhado, contendo a data ISO da noite, libera `full_night_threads=7` e `full_night_load=8.5`; datas vencidas são ignoradas. A data da noite considera a subtração da hora de término noturna. Os comandos compartilham um registro único; overrides por comando só funcionam com `RODAR_LOCAL_TESTE=1`. Sem escrita no registro, o cálculo não começa.
+
+`fila_prioridade_noite` organiza créditos de agentes separadamente dos cálculos de `fila_noturna`. Configure `NIGHT_PRIORITY_CONFIG` pelo exemplo `night-priority.example.json`, com o comando de recados seguros em lista de argumentos. Veja [filas noturnas](docs/NIGHT_QUEUES.md). A fila não abre uma IA diretamente; o recado entregue pode consumir créditos.

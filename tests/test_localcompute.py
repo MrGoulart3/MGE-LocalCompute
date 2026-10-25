@@ -144,6 +144,50 @@ class LocalComputeTest(unittest.TestCase):
         self.config.write_text(json.dumps(cfg))
         self.assertIn('Capacidade: OK', self.call('capacidade_pc').stdout)
 
+    def test_ram_guard_dry_run_then_terminates_owned_job(self):
+        process = self.start(1, 30)
+        self.wait_for(lambda: len(self.state()['jobs']) == 1)
+        result = self.call('guarda_ram', '--dry-run', MGE_RAM_GB='0.1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(process.poll())
+        self.assertIn('"dry_run": true', result.stdout)
+        result = self.call('guarda_ram', MGE_RAM_GB='0.1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.wait_for(lambda: process.poll() is not None)
+        self.assertTrue((self.path / 'state/ram.log').exists())
+
+    def test_normal_ram_guard_leaves_job_running(self):
+        process = self.start(1, 30)
+        self.wait_for(lambda: len(self.state()['jobs']) == 1)
+        result = self.call('guarda_ram')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(process.poll())
+
+    def test_unapproved_registry_override_is_ignored(self):
+        other = self.path / 'parallel-registry'
+        self.assertEqual(self.call('capacidade_pc', RODAR_LOCAL_DIR=str(other)).returncode, 0)
+        self.assertFalse(other.exists())
+
+    def test_full_night_capacity_requires_current_date(self):
+        import datetime
+        import importlib.util
+        from unittest import mock
+        spec = importlib.util.spec_from_file_location('localcompute_full_night', ROOT / 'localcompute.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        directory = self.path / 'state'
+        directory.mkdir()
+        cfg = module.DEFAULTS | {'state_dir': str(directory)}
+        state = {'jobs': []}
+        data = {'load': 0, 'ram_gb': 8, 'temp': 70, 'clamp': 0}
+        with mock.patch.object(module, 'metrics', return_value=data), mock.patch.object(module, 'hour', return_value=22):
+            self.assertFalse(module.fits(cfg, directory, state, 7))
+            stamp = (datetime.datetime.now() - datetime.timedelta(hours=cfg['night_end'])).date().isoformat()
+            (directory / 'NOITE_CHEIA').write_text(stamp)
+            self.assertTrue(module.fits(cfg, directory, state, 7))
+            (directory / 'NOITE_CHEIA').write_text('2000-01-01')
+            self.assertFalse(module.fits(cfg, directory, state, 7))
+
 
 if __name__ == '__main__':
     unittest.main()

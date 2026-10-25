@@ -16,12 +16,13 @@ import time
 import uuid
 
 DEFAULTS = {
-    'day_threads': 4, 'night_threads': 6, 'day_load': 5.5, 'night_load': 7.5,
-    'min_ram_gb': 3, 'start_temp': 75, 'block_temp': 85, 'stop_temp': 90,
+    'day_threads': 5, 'night_threads': 6, 'day_load': 6.5, 'night_load': 7.5,
+    'min_ram_gb': 3, 'start_temp': 78, 'block_temp': 85, 'stop_temp': 90,
     'resume_temp': 75, 'warn_temp': 92, 'hot_samples': 2, 'cool_samples': 3,
     'night_start': 21, 'night_end': 8, 'queue_end': 6, 'poll_seconds': 60,
     'capacity_ram_ok_gb': 4, 'capacity_ram_tight_gb': 2.5,
     'capacity_load_ok': 5, 'capacity_load_tight': 6.5,
+    'full_night_threads': 7, 'full_night_load': 8.5, 'guard_ram_mb': 1500,
     'state_dir': '~/.local/state/mge-localcompute', 'project_root': '~/projects',
     'notify_command': [], 'language': 'en', 'allow_no_sensor': False,
 }
@@ -31,13 +32,13 @@ def config() -> dict:
     """Reads JSON configuration without executing shell fragments."""
     path = Path(os.environ.get('MGE_CONFIG', '~/.config/mge-localcompute/config')).expanduser()
     cfg = DEFAULTS | (json.loads(path.read_text()) if path.exists() else {})
-    for key in ('day_threads', 'night_threads', 'hot_samples', 'cool_samples'):
+    for key in ('day_threads', 'night_threads', 'full_night_threads', 'hot_samples', 'cool_samples'):
         if not isinstance(cfg[key], int) or cfg[key] < 1:
             raise ValueError(f'Invalid configuration / Configuração inválida: {key}')
     for key in ('night_start', 'night_end', 'queue_end'):
         if not isinstance(cfg[key], int) or not 0 <= cfg[key] <= 23:
             raise ValueError(f'Invalid hour / Hora inválida: {key}')
-    for key in ('day_load', 'night_load', 'min_ram_gb', 'poll_seconds'):
+    for key in ('day_load', 'night_load', 'full_night_load', 'guard_ram_mb', 'min_ram_gb', 'poll_seconds'):
         if not isinstance(cfg[key], (int, float)) or cfg[key] <= 0:
             raise ValueError(f'Invalid limit / Limite inválido: {key}')
     if not all(isinstance(cfg[key], (int, float)) for key in ('resume_temp', 'start_temp', 'block_temp', 'stop_temp', 'warn_temp')):
@@ -58,7 +59,8 @@ def say(cfg: dict, en: str, pt: str) -> None:
 
 def state_dir(cfg: dict) -> Path:
     """Returns the private runtime directory, including legacy test overrides."""
-    path = Path(os.environ.get('TERMICO_DIR') or os.environ.get('RODAR_LOCAL_DIR') or cfg['state_dir']).expanduser()
+    override = (os.environ.get('TERMICO_DIR') or os.environ.get('RODAR_LOCAL_DIR')) if os.environ.get('RODAR_LOCAL_TESTE') == '1' else None
+    path = Path(override or cfg['state_dir']).expanduser()
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 
@@ -147,6 +149,10 @@ def fits(cfg: dict, directory: Path, state: dict, threads: int) -> bool:
     night = window(cfg['night_start'], cfg['night_end'])
     maximum = cfg['night_threads' if night else 'day_threads']
     maximum_load = cfg['night_load' if night else 'day_load']
+    stamp = (datetime.datetime.now() - datetime.timedelta(hours=cfg['night_end'])).date().isoformat()
+    full = directory / 'NOITE_CHEIA'
+    if night and full.exists() and full.read_text().strip() == stamp:
+        maximum, maximum_load = cfg['full_night_threads'], cfg['full_night_load']
     data = metrics()
     return (not (directory / 'PAUSA').exists()
             and sum(job['threads'] for job in state['jobs']) + threads <= maximum
@@ -170,7 +176,7 @@ def spawn(cfg: dict, state: dict, threads: int, command: list[str], cwd: str | N
 
 def run(cfg: dict, threads: int, command: list[str]) -> int:
     """Waits for capacity, forwards termination and releases the reservation."""
-    if not command or not 1 <= threads <= max(cfg['day_threads'], cfg['night_threads']):
+    if not command or not 1 <= threads <= max(cfg['day_threads'], cfg['night_threads'], cfg['full_night_threads']):
         raise ValueError('Invalid command or thread count / Comando ou threads inválidos')
     while True:
         with locked(cfg) as (directory, state):
@@ -265,7 +271,7 @@ def queue(cfg: dict, line: str | None, status: bool) -> None:
             priority, project, threads, cwd, command = line.split('|', 4)
             root = Path(cfg['project_root']).expanduser().resolve()
             folder = Path(cwd).expanduser().resolve()
-            if not folder.is_dir() or not folder.is_relative_to(root) or not project or not command or int(priority) < 0 or not 1 <= int(threads) <= max(cfg['day_threads'], cfg['night_threads']):
+            if not folder.is_dir() or not folder.is_relative_to(root) or not project or not command or int(priority) < 0 or not 1 <= int(threads) <= max(cfg['day_threads'], cfg['night_threads'], cfg['full_night_threads']):
                 raise ValueError('Invalid queue entry / Entrada inválida')
             state['queue'].append({'priority': int(priority), 'project': project,
                                    'threads': int(threads), 'cwd': str(folder), 'command': command,
@@ -316,17 +322,64 @@ def worker(path: str) -> int:
     return result
 
 
+def group_rss(pid: int) -> int:
+    """Sums resident memory in KiB for a registered process group."""
+    total = 0
+    for path in Path('/proc').glob('[0-9]*/stat'):
+        try:
+            fields = path.read_text().rsplit(')', 1)[1].split()
+            if int(fields[2]) == pid:
+                total += int(fields[21]) * os.sysconf('SC_PAGE_SIZE') // 1024
+        except (OSError, ValueError, IndexError):
+            continue
+    return total
+
+
+def ram_guard(cfg: dict, dry_run: bool = False) -> None:
+    """Terminates only the largest owned group when available RAM is critical."""
+    if metrics()['ram_gb'] * 1024 >= cfg['guard_ram_mb']:
+        return
+    with locked(cfg) as (directory, state):
+        if not state['jobs']:
+            return
+        job = max(state['jobs'], key=lambda item: group_rss(item['pid']))
+        print(json.dumps({'pid': job['pid'], 'rss_kib': group_rss(job['pid']), 'dry_run': dry_run}))
+        if dry_run:
+            return
+        if valid(job):
+            os.killpg(job['pid'], signal.SIGTERM)
+            os.killpg(job['pid'], signal.SIGCONT)
+            with (directory / 'ram.log').open('a') as stream:
+                stream.write(f"{datetime.datetime.now().isoformat()} TERM {job['pid']} {job['cwd']}\n")
+    deadline = time.monotonic() + 10
+    while valid(job) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    with locked(cfg) as (_, state):
+        if valid(job):
+            os.killpg(job['pid'], signal.SIGKILL)
+    notify(cfg, 'RAM guard', 'Guarda de RAM', f"Local job terminated: {job['cwd']}")
+
+
+def priority_night(cfg: dict, arguments: list[str]) -> int:
+    """Uses the shared orchestration scheduler for the agent credit queue."""
+    return subprocess.run([sys.executable, str(Path(__file__).with_name('night_priority.py')), *arguments], check=False).returncode
+
+
 def main() -> int:
     """Dispatches the four public command wrappers."""
     parser = argparse.ArgumentParser(description='Shared PC tools / Ferramentas para PC compartilhado')
-    parser.add_argument('tool', choices=['rodar_local', 'fila_noturna', 'termico', 'capacidade_pc', '_worker'])
+    parser.add_argument('tool', choices=['rodar_local', 'fila_noturna', 'termico', 'capacidade_pc', 'guarda_ram', 'fila_prioridade_noite', '_worker'])
     parser.add_argument('args', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     try:
         if args.tool == '_worker':
             return worker(args.args[0])
         cfg = config()
-        if args.tool == 'termico':
+        if args.tool == 'guarda_ram':
+            ram_guard(cfg, '--dry-run' in args.args or os.environ.get('DRYRUN') == '1')
+        elif args.tool == 'fila_prioridade_noite':
+            return priority_night(cfg, args.args)
+        elif args.tool == 'termico':
             thermal(cfg)
         elif args.tool == 'fila_noturna':
             queue(cfg, args.args[1] if args.args and args.args[0] == '--add' else None, '--status' in args.args)
